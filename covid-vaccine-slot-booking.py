@@ -444,6 +444,7 @@ def main():
     parser.add_argument('--lat', default=None, help='Latitude of your location')
     parser.add_argument('--long', default=None, help='Longitude of your location')
     parser.add_argument('--PINCode', default=None, help='PIN Code of your location')
+    parser.add_argument('--book', action='store_true', help='Experimental flag - not used')
 
     args = parser.parse_args()
 
@@ -504,7 +505,7 @@ def main():
 
             # call function to check and book slots
             TOKEN_VALID = check_and_book(request_header, vaccine_type, beneficiary_dtls, district_dtls, minimum_slots,
-                                         min_age_booking, False, lat, long)
+                                         min_age_booking, args.book, lat, long)
 
             # check if token is still valid
             beneficiaries_list = requests.get(BENEFICIARIES_URL, headers=request_header)
