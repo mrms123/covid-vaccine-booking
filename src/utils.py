@@ -291,7 +291,8 @@ def collect_user_details(request_header):
     print(
         "===== BE CAREFUL WITH THIS OPTION! AUTO-BOOKING WILL BOOK THE FIRST AVAILABLE CENTRE, DATE, AND A RANDOM SLOT! ====="
     )
-    auto_book = "yes-please"
+    auto_book = input("Do you want to enable auto-booking? (yes-please or no) Default yes-please: ")
+    auto_book = 'yes-please' if not auto_book else auto_book
 
     print("\n================================= Captcha Automation =================================\n")
 
@@ -606,7 +607,7 @@ def check_and_book(
                 min_age_booking,
                 fee_type,
                 dose_num,
-                beep_required=False
+                beep_required=True
             )
 
             if not isinstance(options, bool):
@@ -717,58 +718,95 @@ def check_and_book(
             # if captcha automation is enabled then have less duration for stale information of centers & slots.
             MAX_ALLOWED_DURATION_OF_STALE_INFORMATION_IN_SECS = 1*60 if captcha_automation == 'n' else 2*60
 
-            # Now try to look into all options unless it is not authentication related issue
-            for i in range(0, len(options)):
-                option = options[i]
-                all_slots_of_a_center = option.get("slots", [])
-                if not all_slots_of_a_center:
-                    continue
-                # For better chances of booking, use random slots of a particular center
-                # This will help if too many folks are trying for same region at the same time.
-                # Everyone will have better chances of booking otherwise everyone will look for same slot of same center at a time.
-                # Randomized slots selection is maximizing chances of booking
-                random.shuffle(all_slots_of_a_center) # in-place modification
+            if auto_book == 'yes-please':
+                # Now try to look into all options unless it is not authentication related issue
+                for i in range(0, len(options)):
+                    option = options[i]
+                    all_slots_of_a_center = option.get("slots", [])
+                    if not all_slots_of_a_center:
+                        continue
+                    # For better chances of booking, use random slots of a particular center
+                    # This will help if too many folks are trying for same region at the same time.
+                    # Everyone will have better chances of booking otherwise everyone will look for same slot of same center at a time.
+                    # Randomized slots selection is maximizing chances of booking
+                    random.shuffle(all_slots_of_a_center) # in-place modification
 
-                for selected_slot in all_slots_of_a_center:
-                    # if have spent too much time in loop iteration then means we are looking at stale information about centers & slots.
-                    # so we should re-calculate this information while ending this loop more aggressively.
-                    current_epoch = int(time.time())
-                    if current_epoch - start_epoch >= MAX_ALLOWED_DURATION_OF_STALE_INFORMATION_IN_SECS:
-                        print("tried too many centers but still not able to book then look for current status of centers ...")
+                    for selected_slot in all_slots_of_a_center:
+                        # if have spent too much time in loop iteration then means we are looking at stale information about centers & slots.
+                        # so we should re-calculate this information while ending this loop more aggressively.
+                        current_epoch = int(time.time())
+                        if current_epoch - start_epoch >= MAX_ALLOWED_DURATION_OF_STALE_INFORMATION_IN_SECS:
+                            print("tried too many centers but still not able to book then look for current status of centers ...")
+                            return True
+
+                        try:
+                            center_id = option["center_id"]
+                            print(f"============> Trying Choice # {i} Center # {center_id}, Slot #{selected_slot}")
+
+                            dose_num = 2 if [beneficiary["status"] for beneficiary in beneficiary_dtls][0] == "Partially Vaccinated" else 1
+                            new_req = {
+                                "beneficiaries": [
+                                    beneficiary["bref_id"] for beneficiary in beneficiary_dtls
+                                ],
+                                "dose": dose_num,
+                                "center_id": option["center_id"],
+                                "session_id": option["session_id"],
+                                "slot": selected_slot,
+                            }
+                            print(f"Booking with info: {new_req}")
+                            booking_status = book_appointment(request_header, new_req, mobile, captcha_automation)
+                            # is token error ? If yes then break the loop by returning immediately
+                            if booking_status == 0:
+                                return False
+                            else:
+                                # try irrespective of booking status as it will be beneficial choice.
+                                # try different center as slots are full for this center
+                                # break the slots loop
+                                print('Center is fully booked..Trying another...')
+                                break
+                        except IndexError:
+                            print("============> Invalid Option!")
+                            os.system("pause")
+                            pass
+
+                # tried all slots of all centers but still not able to book then look for current status of centers
+                return True
+
+            else:
+                try:
+                    choice = inputimeout(
+                        prompt='----------> Wait 20 seconds for updated options OR \n----------> Enter a choice e.g: 1.4 for (1st center 4th slot): ',
+                        timeout=20)
+
+                    choice = choice.split('.')
+                    choice = [int(item) for item in choice]
+                    print(f'============> Got Choice: Center #{choice[0]}, Slot #{choice[1]}')
+
+                    new_req = {
+                        'beneficiaries': [beneficiary['bref_id'] for beneficiary in beneficiary_dtls],
+                        'dose': 2 if [beneficiary['status'] for beneficiary in beneficiary_dtls][
+                                         0] == 'Partially Vaccinated' else 1,
+                        'center_id': options[choice[0] - 1]['center_id'],
+                        'session_id': options[choice[0] - 1]['session_id'],
+                        'slot': options[choice[0] - 1]['slots'][choice[1] - 1]
+                    }
+
+                    print(f'Booking with info: {new_req}')
+                    booking_status = book_appointment(request_header, new_req, mobile, captcha_automation)
+
+                    if booking_status == 0:
+                        return False
+                    else:
                         return True
 
-                    try:
-                        center_id = option["center_id"]
-                        print(f"============> Trying Choice # {i} Center # {center_id}, Slot #{selected_slot}")
+                except IndexError:
+                    print("============> Invalid Option!")
+                    os.system("pause")
+                    pass
 
-                        dose_num = 2 if [beneficiary["status"] for beneficiary in beneficiary_dtls][0] == "Partially Vaccinated" else 1
-                        new_req = {
-                            "beneficiaries": [
-                                beneficiary["bref_id"] for beneficiary in beneficiary_dtls
-                            ],
-                            "dose": dose_num,
-                            "center_id": option["center_id"],
-                            "session_id": option["session_id"],
-                            "slot": selected_slot,
-                        }
-                        print(f"Booking with info: {new_req}")
-                        booking_status = book_appointment(request_header, new_req, mobile, captcha_automation)
-                        # is token error ? If yes then break the loop by returning immediately
-                        if booking_status == 0:
-                            return False
-                        else:
-                            # try irrespective of booking status as it will be beneficial choice.
-                            # try different center as slots are full for this center
-                            # break the slots loop
-                            print('Center is fully booked..Trying another...')
-                            break
-                    except IndexError:
-                        print("============> Invalid Option!")
-                        os.system("pause")
-                        pass
 
-            # tried all slots of all centers but still not able to book then look for current status of centers
-            return True
+
+
 def get_vaccine_preference():
     print(
         "It seems you're trying to find a slot for your first dose. Do you have a vaccine preference?"
