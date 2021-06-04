@@ -1051,6 +1051,12 @@ def get_min_age(beneficiary_dtls):
     """
     age_list = [item["age"] for item in beneficiary_dtls]
     min_age = min(age_list)
+    max_age = max(age_list)
+
+    if min_age <45 and max_age>=45:
+        print("All beneficiaries have to be in the same age bracket - i.e., 18-44, or 45+")
+        sys.exit()
+
     return min_age
 
 
